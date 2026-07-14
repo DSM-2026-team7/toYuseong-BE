@@ -309,6 +309,38 @@ class NotificationsResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# 데모 로그인 (역할 선택) — 비밀번호 없이 사용자/사장님 계정을 골라 로그인한다.
+# ---------------------------------------------------------------------------
+
+
+class AuthAccountItem(BaseModel):
+    role: Literal["customer", "owner"]
+    user_id: int
+    nickname: str
+    store_id: Optional[int] = None
+    store_name: Optional[str] = None
+
+
+class AuthAccountsResponse(BaseModel):
+    accounts: list[AuthAccountItem]
+
+
+class AuthLoginRequest(BaseModel):
+    role: Literal["customer", "owner"]
+    user_id: int
+
+
+class AuthLoginResponse(BaseModel):
+    role: Literal["customer", "owner"]
+    user_id: int
+    nickname: str
+    region: Optional[str] = None
+    store_id: Optional[int] = None
+    store_name: Optional[str] = None
+    token: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
 # 관리자 API
 # ---------------------------------------------------------------------------
 

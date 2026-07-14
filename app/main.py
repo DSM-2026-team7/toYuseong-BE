@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app import database
 from app.routers import admin, checkout, coupons, me, passes, stamps, stores
+from app.routers import auth as demo_auth
 from app.seed import run_seed
 from web.routers import applications, auth, dashboard, passes as admin_passes, settlements
 
@@ -62,6 +63,7 @@ app.include_router(checkout.router)
 app.include_router(passes.router)
 app.include_router(me.router)
 app.include_router(admin.router)
+app.include_router(demo_auth.router)
 
 # 구청 관리자 API (web/)
 app.include_router(auth.router)
