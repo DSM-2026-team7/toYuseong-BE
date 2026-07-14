@@ -1,7 +1,7 @@
 from datetime import datetime
-from typing import Annotated, Optional
+from typing import Annotated, Literal, Optional, Union
 
-from pydantic import BaseModel, ConfigDict, PlainSerializer
+from pydantic import BaseModel, ConfigDict, Field, PlainSerializer
 
 from app.utils import iso_z
 
@@ -300,3 +300,103 @@ class NotificationItem(BaseModel):
 
 class NotificationsResponse(BaseModel):
     notifications: list[NotificationItem]
+
+
+# ---------------------------------------------------------------------------
+# 관리자 API
+# ---------------------------------------------------------------------------
+
+
+class AdminRegisterRequest(BaseModel):
+    name: str
+    register_num: str
+    category: Literal["cafe", "rest", "beauty", "etc"]
+    region: str
+    business_hours: Optional[str] = None
+    phone_no: str
+
+
+class AdminStoreResponse(BaseModel):
+    id: int
+    name: str
+    category: str
+    region: str
+    business_hours: Optional[str] = None
+    phone_no: Optional[str] = None
+
+
+class AdminCouponPercentRequest(BaseModel):
+    type: Literal["percent"]
+    sale_percent: float
+    sale_max: Optional[int] = None
+    is_apply_all: bool = False
+    expiry_date: datetime
+
+
+class AdminCouponStampRequest(BaseModel):
+    type: Literal["stamp"]
+    stamp_max_require: int
+    reward_content: str
+    is_visit_stamp: bool = False
+    expiry_date: datetime
+
+
+class AdminCouponFixedRequest(BaseModel):
+    type: Literal["fixed"]
+    sale_price: int
+    min_buy_price: int
+    expiry_date: datetime
+    coupon_num: Optional[int] = None
+    is_coupon_infinity: bool = False
+
+
+AdminCouponRequest = Annotated[
+    Union[AdminCouponPercentRequest, AdminCouponStampRequest, AdminCouponFixedRequest],
+    Field(discriminator="type"),
+]
+
+
+class MenuRequest(BaseModel):
+    name: str
+    price: int
+
+
+class MenuUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    price: Optional[int] = None
+
+
+class MenuResponse(BaseModel):
+    menuId: int
+    name: str
+    price: int
+
+
+class MenuQrRequest(BaseModel):
+    menuIds: list[int]
+
+
+class DirectQrRequest(BaseModel):
+    amount: int
+
+
+class QrCreateResponse(BaseModel):
+    qrId: int
+    amount: int
+    qrImage: str
+
+
+class QrResponse(QrCreateResponse):
+    status: str
+
+
+class PaymentResponse(BaseModel):
+    paymentId: int
+    amount: int
+    status: str
+
+
+class AdminStampResponse(BaseModel):
+    shopName: str
+    currentStamp: int
+    maxStamp: int

@@ -1,11 +1,12 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app import database
-from app.routers import checkout, coupons, me, passes, stamps, stores
+from app.routers import admin, checkout, coupons, me, passes, stamps, stores
 from app.seed import run_seed
 
 
@@ -45,9 +46,18 @@ async def http_exception_handler(request, exc: HTTPException):
     )
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=400,
+        content={"error": "invalid_request", "message": "잘못된 요청입니다."},
+    )
+
+
 app.include_router(stores.router)
 app.include_router(stamps.router)
 app.include_router(coupons.router)
 app.include_router(checkout.router)
 app.include_router(passes.router)
 app.include_router(me.router)
+app.include_router(admin.router)

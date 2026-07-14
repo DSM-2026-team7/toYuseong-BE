@@ -17,12 +17,14 @@ NOTICE = "할인 차액은 유성구청이 보전해요"
 def _owned_pass_ids(db: Session, user_id: Optional[int]) -> set[int]:
     if user_id is None:
         return set()
-    return {
-        row.pass_id
-        for row in db.query(models.UserPass.pass_id)
+    user_passes = (
+        db.query(models.UserPass)
         .filter(models.UserPass.user_id == user_id, models.UserPass.status == "active")
         .all()
-    }
+    )
+    for user_pass in user_passes:
+        sync_user_pass_status(db, user_pass)
+    return {user_pass.pass_id for user_pass in user_passes if user_pass.status == "active"}
 
 
 @router.get("/passes", response_model=schemas.PassListResponse)

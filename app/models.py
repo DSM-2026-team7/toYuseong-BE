@@ -26,6 +26,8 @@ class Store(Base):
     region: Mapped[str] = mapped_column(String, nullable=False)
     business_hours: Mapped[str] = mapped_column(String, nullable=False)
     owner_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    register_num: Mapped[str | None] = mapped_column(String, nullable=True, unique=True)
+    phone_no: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class StampPolicy(Base):
@@ -36,6 +38,7 @@ class StampPolicy(Base):
     goal: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
     reward: Mapped[str] = mapped_column(String, nullable=False)
     condition: Mapped[str] = mapped_column(String, nullable=False, default="1일 1회·결제 시")
+    expiry_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class StampCard(Base):
@@ -64,6 +67,38 @@ class Coupon(Base):
     store_only: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     min_payment: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_discount: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    coupon_num: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    is_coupon_infinity: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    is_apply_all: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
+
+class Menu(Base):
+    __tablename__ = "menus"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    price: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class PaymentQr(Base):
+    __tablename__ = "payment_qrs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="WAITING")
+    qr_image: Mapped[str] = mapped_column(String, nullable=False)
+
+
+class Payment(Base):
+    __tablename__ = "payments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
+    qr_id: Mapped[int | None] = mapped_column(ForeignKey("payment_qrs.id"), nullable=True)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="WAITING")
 
 
 class UserCoupon(Base):
