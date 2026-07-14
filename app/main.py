@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app import database
 from app.migrations import ensure_compatibility_columns
-from app.routers import admin, checkout, coupons, me, passes, stamps, stores
+from app.routers import admin, checkout, coupons, me, passes, places, stamps, stores
 from app.routers import auth as demo_auth
 from app.seed import run_seed
 from web.routers import applications, auth, dashboard, passes as admin_passes, settlements
@@ -60,6 +60,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 
 app.include_router(stores.router)
+app.include_router(places.router)
 app.include_router(stamps.router)
 app.include_router(coupons.router)
 app.include_router(checkout.router)

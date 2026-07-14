@@ -93,8 +93,8 @@ def test_store_search_map_and_detail_include_consumer_data(client):
         "/stores",
         params={
             "q": "커피",
-            "latitude": 36.3551,
-            "longitude": 127.3412,
+            "latitude": 36.36234,
+            "longitude": 127.34486,
             "sort": "distance",
         },
         headers=USER_HEADERS,
@@ -103,13 +103,13 @@ def test_store_search_map_and_detail_include_consumer_data(client):
     stores = search.json()["stores"]
     assert stores
     assert all("커피" in store["name"] for store in stores)
-    assert stores[0]["distance_km"] == 0
+    assert stores[0]["distance_m"] == 0
     assert stores[0]["address"]
     assert stores[0]["latitude"] is not None
 
     detail = client.get("/stores/3", headers=USER_HEADERS)
     assert detail.status_code == 200
-    assert detail.json()["phone_no"] == "042-000-0003"
+    assert detail.json()["phone_no"] == "042-111-1003"
     assert detail.json()["address"]
     assert len(detail.json()["coupons"]) >= 2
     assert detail.json()["stamp"]["goal"] == 5

@@ -1,4 +1,4 @@
-from math import asin, cos, radians, sin, sqrt
+import math
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,11 +11,31 @@ from app.utils import get_optional_user_id, utc_now
 router = APIRouter(tags=["stores"])
 
 
-def _distance_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    d_lat = radians(lat2 - lat1)
-    d_lon = radians(lon2 - lon1)
-    a = sin(d_lat / 2) ** 2 + cos(radians(lat1)) * cos(radians(lat2)) * sin(d_lon / 2) ** 2
-    return 6371 * 2 * asin(sqrt(a))
+def _distance_m(lat1: float, lng1: float, lat2: float, lng2: float) -> int:
+    """? GPS ?? ??? ??? ?? ??? ????."""
+    radius_m = 6_371_000
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lam = math.radians(lng2 - lng1)
+    a = math.sin(delta_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lam / 2) ** 2
+    return round(radius_m * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
+
+
+def _store_item(store: models.Store, stamp_summary: schemas.StampSummary | None, distance_m: int | None = None):
+    return schemas.StoreListItem(
+        id=store.id,
+        name=store.name,
+        category=store.category,
+        region=store.region,
+        address=store.address,
+        phone_no=store.phone_no,
+        latitude=store.latitude,
+        longitude=store.longitude,
+        image_url=store.image_url,
+        distance_m=distance_m,
+        stamp_summary=stamp_summary,
+    )
 
 
 @router.get("/stores", response_model=schemas.StoreListResponse)
@@ -23,36 +43,39 @@ def list_stores(
     region: Optional[str] = Query(default=None),
     category: str = Query(default="all"),
     sort: str = Query(default="popular"),
-    q: Optional[str] = Query(default=None),
-    latitude: Optional[float] = Query(default=None),
-    longitude: Optional[float] = Query(default=None),
-    radius_km: float = Query(default=5.0, gt=0, le=30),
+    q: Optional[str] = Query(default=None, description="매장명 검색어"),
+    latitude: Optional[float] = Query(default=None, ge=-90, le=90),
+    longitude: Optional[float] = Query(default=None, ge=-180, le=180),
+    lat: Optional[float] = Query(default=None, ge=-90, le=90),
+    lng: Optional[float] = Query(default=None, ge=-180, le=180),
+    radius_km: Optional[float] = Query(default=None, gt=0),
     x_user_id: Optional[int] = Depends(get_optional_user_id),
     db: Session = Depends(get_db),
 ):
+    """?? ??/?? API.
+
+    - ?? ??? ??? ???? `latitude`/`longitude` ?? `lat`/`lng`? ???
+      ??? `distance_m`? ???? ??? ??? ????.
+    - `radius_km`? ?? ??? ?? ?? ?? ?? ?? ??? ????.
+    - ?? ??? ??? ???? ?? ?? ???? ???? ??/??/???? ??? ????.
+    """
+    user_lat = latitude if latitude is not None else lat
+    user_lng = longitude if longitude is not None else lng
+
     query = db.query(models.Store)
     if region:
         query = query.filter(models.Store.region == region)
     if category and category != "all":
         query = query.filter(models.Store.category == category)
     if q and q.strip():
-        query = query.filter(models.Store.name.ilike(f"%{q.strip()}%"))
+        query = query.filter(models.Store.name.contains(q.strip()))
 
     if sort == "recent":
         query = query.order_by(models.Store.id.desc())
     else:
         query = query.order_by(models.Store.id.asc())
 
-    stores_with_distance: list[tuple[models.Store, Optional[float]]] = []
-    for store in query.all():
-        distance = None
-        if latitude is not None and longitude is not None and store.latitude is not None and store.longitude is not None:
-            distance = _distance_km(latitude, longitude, store.latitude, store.longitude)
-            if distance > radius_km:
-                continue
-        stores_with_distance.append((store, distance))
-    if sort == "distance" and latitude is not None and longitude is not None:
-        stores_with_distance.sort(key=lambda item: item[1] if item[1] is not None else float("inf"))
+    stores = query.all()
 
     cards_by_store_id = {}
     if x_user_id is not None:
@@ -64,7 +87,13 @@ def list_stores(
         cards_by_store_id = {card.store_id: card for card in cards}
 
     items: list[schemas.StoreListItem] = []
-    for store, distance in stores_with_distance:
+    for store in stores:
+        distance = None
+        if user_lat is not None and user_lng is not None and store.latitude is not None and store.longitude is not None:
+            distance = _distance_m(user_lat, user_lng, store.latitude, store.longitude)
+            if radius_km is not None and distance > radius_km * 1000:
+                continue
+
         card = cards_by_store_id.get(store.id)
         stamp_summary = None
         if card is not None:
@@ -75,20 +104,10 @@ def list_stores(
             )
             if policy is not None:
                 stamp_summary = schemas.StampSummary(current=card.current, goal=policy.goal)
-        items.append(
-            schemas.StoreListItem(
-                id=store.id,
-                name=store.name,
-                category=store.category,
-                region=store.region,
-                address=store.address,
-                image_url=store.image_url,
-                latitude=store.latitude,
-                longitude=store.longitude,
-                distance_km=round(distance, 2) if distance is not None else None,
-                stamp_summary=stamp_summary,
-            )
-        )
+        items.append(_store_item(store, stamp_summary, distance))
+
+    if user_lat is not None and user_lng is not None:
+        items.sort(key=lambda item: item.distance_m if item.distance_m is not None else 10**12)
 
     return schemas.StoreListResponse(stores=items)
 

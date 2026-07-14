@@ -9,26 +9,71 @@ from web.auth import hash_password
 DEMO_USER_ID = 100
 
 
+STORE_LOCATION_FIXTURES = {
+    1: {
+        "address": "대전 유성구 대학로 99",
+        "latitude": 36.36234,
+        "longitude": 127.34486,
+        "image_url": "https://placehold.co/600x400?text=Coffee",
+        "phone_no": "042-111-1001",
+    },
+    2: {
+        "address": "대전 유성구 궁동로 18",
+        "latitude": 36.36157,
+        "longitude": 127.35036,
+        "image_url": "https://placehold.co/600x400?text=Roastery",
+        "phone_no": "042-111-1002",
+    },
+    3: {
+        "address": "대전 유성구 궁동 409-1",
+        "latitude": 36.36018,
+        "longitude": 127.34883,
+        "image_url": "https://placehold.co/600x400?text=Bunsik",
+        "phone_no": "042-111-1003",
+    },
+    4: {
+        "address": "대전 유성구 온천로 45",
+        "latitude": 36.35484,
+        "longitude": 127.34179,
+        "image_url": "https://placehold.co/600x400?text=Salad",
+        "phone_no": "042-111-1004",
+    },
+    5: {
+        "address": "대전 유성구 온천북로 33",
+        "latitude": 36.35742,
+        "longitude": 127.34291,
+        "image_url": "https://placehold.co/600x400?text=Nail",
+        "phone_no": "042-111-1005",
+    },
+    6: {
+        "address": "대전 유성구 대학로151번길 12",
+        "latitude": 36.36318,
+        "longitude": 127.34967,
+        "image_url": "https://placehold.co/600x400?text=Hair",
+        "phone_no": "042-111-1006",
+    },
+}
+
+def _backfill_store_locations(db: Session) -> None:
+    changed = False
+    for store_id, values in STORE_LOCATION_FIXTURES.items():
+        store = db.get(models.Store, store_id)
+        if store is None:
+            continue
+        for key, value in values.items():
+            if getattr(store, key, None) in (None, ""):
+                setattr(store, key, value)
+                changed = True
+    if changed:
+        db.commit()
+
+
 def run_seed(db: Session) -> None:
     """궁동/온천2동 상권 컨셉의 더미 데이터를 앱 최초 실행 시 1회 삽입한다."""
     if db.query(models.Store).first() is not None:
         # 기존 개발 DB는 create_all만으로 새 컬럼의 데모 값을 채울 수 없으므로
         # 지도 좌표와 패스 누적 할인 한도를 안전하게 보강한다.
-        store_defaults = {
-            1: ("대전 유성구 온천로 1", 36.3551, 127.3412),
-            2: ("대전 유성구 궁동로 2", 36.3614, 127.3502),
-            3: ("대전 유성구 궁동로 3", 36.3620, 127.3495),
-            4: ("대전 유성구 온천로 4", 36.3547, 127.3420),
-            5: ("대전 유성구 온천로 5", 36.3538, 127.3405),
-            6: ("대전 유성구 궁동로 6", 36.3618, 127.3510),
-        }
-        for store_id, (address, latitude, longitude) in store_defaults.items():
-            store = db.get(models.Store, store_id)
-            if store is None:
-                continue
-            store.address = store.address or address
-            store.latitude = store.latitude if store.latitude is not None else latitude
-            store.longitude = store.longitude if store.longitude is not None else longitude
+        _backfill_store_locations(db)
 
         pass_limits = {
             1: config.PASS_ONEDAY_MAX_DISCOUNT,
@@ -59,33 +104,27 @@ def run_seed(db: Session) -> None:
     stores = [
         models.Store(
             id=1, name="동네커피 유성점", category="카페", region="유성구 온천2동",
-            business_hours="매일 08:00-22:00", owner_id=1, phone_no="042-000-0001",
-            address="대전 유성구 온천로 1", latitude=36.3551, longitude=127.3412,
+            business_hours="매일 08:00-22:00", owner_id=1, **STORE_LOCATION_FIXTURES[1],
         ),
         models.Store(
             id=2, name="궁동로스터리", category="카페", region="유성구 궁동",
-            business_hours="매일 09:00-23:00", owner_id=2, phone_no="042-000-0002",
-            address="대전 유성구 궁동로 2", latitude=36.3614, longitude=127.3502,
+            business_hours="매일 09:00-23:00", owner_id=2, **STORE_LOCATION_FIXTURES[2],
         ),
         models.Store(
             id=3, name="우리분식", category="음식점", region="유성구 궁동",
-            business_hours="매일 10:00-21:00", owner_id=3, phone_no="042-000-0003",
-            address="대전 유성구 궁동로 3", latitude=36.3620, longitude=127.3495,
+            business_hours="매일 10:00-21:00", owner_id=3, **STORE_LOCATION_FIXTURES[3],
         ),
         models.Store(
             id=4, name="아삭샐러드", category="음식점", region="유성구 온천2동",
-            business_hours="매일 09:00-20:00", owner_id=4, phone_no="042-000-0004",
-            address="대전 유성구 온천로 4", latitude=36.3547, longitude=127.3420,
+            business_hours="매일 09:00-20:00", owner_id=4, **STORE_LOCATION_FIXTURES[4],
         ),
         models.Store(
             id=5, name="유성네일살롱", category="뷰티", region="유성구 온천2동",
-            business_hours="매일 10:00-20:00", owner_id=5, phone_no="042-000-0005",
-            address="대전 유성구 온천로 5", latitude=36.3538, longitude=127.3405,
+            business_hours="매일 10:00-20:00", owner_id=5, **STORE_LOCATION_FIXTURES[5],
         ),
         models.Store(
             id=6, name="궁동헤어스튜디오", category="뷰티", region="유성구 궁동",
-            business_hours="화-일 10:00-20:00", owner_id=6, phone_no="042-000-0006",
-            address="대전 유성구 궁동로 6", latitude=36.3618, longitude=127.3510,
+            business_hours="화-일 10:00-20:00", owner_id=6, **STORE_LOCATION_FIXTURES[6],
         ),
     ]
     db.add_all(stores)

@@ -1,6 +1,29 @@
 import os
 
 
+
+def _load_dotenv_if_exists(path: str = ".env") -> None:
+    """?? ??? ?? ?? .env ?? os.environ? ????.
+
+    ?? ?/?? ??? ??? ?? ???? ???.
+    """
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as file:
+        for raw_line in file:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            key = key.strip()
+            value = value.strip().strip('"').strip("'")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
+_load_dotenv_if_exists()
+
+
 DEFAULT_TOSS_SECRET_KEY = "test_gsk_docs_OaPz8L5KdmLxqZqRxTmwrlBN"
 TOSS_SECRET_KEY = os.environ.get("TOSS_SECRET_KEY") or DEFAULT_TOSS_SECRET_KEY
 TOSS_CONFIRM_URL = "https://api.tosspayments.com/v1/payments/confirm"
@@ -31,3 +54,9 @@ PASS_WEEKEND_CAFE_MAX_DISCOUNT = _int_env("PASS_WEEKEND_CAFE_MAX_DISCOUNT", 3000
 PASS_GUNGDONG_LOYALTY_PRICE = _int_env("PASS_GUNGDONG_LOYALTY_PRICE", 4900)
 PASS_GUNGDONG_LOYALTY_DISCOUNT_RATE = _int_env("PASS_GUNGDONG_LOYALTY_DISCOUNT_RATE", 15)
 PASS_GUNGDONG_LOYALTY_MAX_DISCOUNT = _int_env("PASS_GUNGDONG_LOYALTY_MAX_DISCOUNT", 30000)
+
+
+NAVER_SEARCH_CLIENT_ID = os.environ.get("NAVER_SEARCH_CLIENT_ID", "")
+NAVER_SEARCH_CLIENT_SECRET = os.environ.get("NAVER_SEARCH_CLIENT_SECRET", "")
+NAVER_LOCAL_SEARCH_URL = "https://openapi.naver.com/v1/search/local.json"
+NAVER_REQUEST_TIMEOUT_SECONDS = 5.0

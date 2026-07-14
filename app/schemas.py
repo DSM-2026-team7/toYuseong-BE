@@ -28,10 +28,11 @@ class StoreListItem(BaseModel):
     category: str
     region: str
     address: Optional[str] = None
-    image_url: Optional[str] = None
+    phone_no: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
-    distance_km: Optional[float] = None
+    image_url: Optional[str] = None
+    distance_m: Optional[int] = None
     stamp_summary: Optional[StampSummary] = None
 
 
@@ -464,6 +465,25 @@ class UserPreferencesRequest(BaseModel):
 class LogoutResponse(BaseModel):
     message: str
 
+
+# ---------------------------------------------------------------------------
+# 장소 검색 API (네이버 지역 검색)
+# ---------------------------------------------------------------------------
+
+
+class PlaceSearchItem(BaseModel):
+    name: str
+    category: Optional[str] = None
+    address: Optional[str] = None
+    road_address: Optional[str] = None
+    phone: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
+    source: str = "naver"
+
+
+class PlaceSearchResponse(BaseModel):
+    places: list[PlaceSearchItem]
 
 # ---------------------------------------------------------------------------
 # 관리자 API
