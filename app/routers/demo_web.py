@@ -3,8 +3,8 @@ from fastapi.responses import HTMLResponse
 
 router = APIRouter(prefix="/demo", tags=["demo-web"])
 
-# 토스페이먼츠 공식 테스트용 클라이언트 키
-TOSS_CLIENT_KEY = "test_ck_G2p9LL2p3kv22409oOnr3b7YxAdX"
+# 토스페이먼츠 공식 테스트용 클라이언트 키 (Docs 샘플 한 쌍 세트)
+TOSS_CLIENT_KEY = "test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm"
 
 @router.get("/purchase", response_class=HTMLResponse)
 def get_purchase_demo():
