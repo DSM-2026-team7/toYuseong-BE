@@ -1,11 +1,16 @@
+import json
 from datetime import timedelta
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.encoders import jsonable_encoder
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.database import get_db
+from app.services.payment_records import completed_result_or_conflict
+from app.toss import confirm_toss_payment
 from app.utils import compute_d_day, get_optional_user_id, require_user_id, sync_user_pass_status, utc_now
 
 router = APIRouter(tags=["passes"])
@@ -115,36 +120,106 @@ def purchase_pass(
     if pass_row is None:
         raise HTTPException(status_code=404, detail=PASS_NOT_FOUND_ERROR)
 
-    now = utc_now()
-    expires_at = now + timedelta(days=pass_row.duration_days)
-
-    user_pass = models.UserPass(
-        user_id=x_user_id,
-        pass_id=pass_row.id,
-        status="active",
-        purchased_at=now,
-        expires_at=expires_at,
-    )
-    db.add(user_pass)
-    db.flush()
-
-    db.add(
-        models.Transaction(
-            user_id=x_user_id,
-            type="pass_purchase",
-            store_name=None,
-            amount=pass_row.price,
-            memo=pass_row.name,
-            created_at=now,
+    if payload.amount != pass_row.price:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "payment_amount_mismatch",
+                "message": "결제 금액이 패스 가격과 일치하지 않아요",
+            },
         )
-    )
-    db.commit()
+    if payload.duration_days != pass_row.duration_days:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "invalid_pass_option", "message": "선택한 패스 기간을 확인해 주세요"},
+        )
 
-    return schemas.PassPurchaseResponse(
-        user_pass_id=user_pass.id,
-        name=pass_row.name,
-        status="active",
-        expires_at=expires_at,
-        paid=pass_row.price,
-        message="패스 구매가 완료됐어요",
+    cached_result = completed_result_or_conflict(
+        db,
+        payment_key=payload.paymentKey,
+        order_id=payload.orderId,
+        user_id=x_user_id,
+        purpose="pass_purchase",
+        amount=payload.amount,
     )
+    if cached_result is not None:
+        return cached_result
+
+    try:
+        confirmed = confirm_toss_payment(payload.paymentKey, payload.orderId, payload.amount)
+    except Exception:
+        db.rollback()
+        raise
+
+    try:
+        now = utc_now()
+        expires_at = now + timedelta(days=payload.duration_days)
+
+        user_pass = models.UserPass(
+            user_id=x_user_id,
+            pass_id=pass_row.id,
+            status="active",
+            purchased_at=now,
+            expires_at=expires_at,
+        )
+        db.add(user_pass)
+        db.flush()
+
+        db.add(
+            models.Transaction(
+                user_id=x_user_id,
+                type="pass_purchase",
+                store_name=None,
+                amount=pass_row.price,
+                memo=pass_row.name,
+                created_at=now,
+            )
+        )
+        result = {
+            "user_pass_id": user_pass.id,
+            "name": pass_row.name,
+            "status": "active",
+            "expires_at": expires_at,
+            "paid": pass_row.price,
+            "payment_key": payload.paymentKey,
+            "order_id": payload.orderId,
+            "payment_status": confirmed["status"],
+            "message": "패스 구매가 완료됐어요",
+        }
+        db.add(
+            models.TossPayment(
+                payment_key=payload.paymentKey,
+                order_id=payload.orderId,
+                user_id=x_user_id,
+                purpose="pass_purchase",
+                amount=payload.amount,
+                status=confirmed["status"],
+                method=confirmed.get("method"),
+                pass_id=pass_row.id,
+                user_pass_id=user_pass.id,
+                result_json=json.dumps(jsonable_encoder(result), ensure_ascii=False),
+                approved_at=now,
+            )
+        )
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        cached_result = completed_result_or_conflict(
+            db,
+            payment_key=payload.paymentKey,
+            order_id=payload.orderId,
+            user_id=x_user_id,
+            purpose="pass_purchase",
+            amount=payload.amount,
+        )
+        if cached_result is not None:
+            return cached_result
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "payment_already_processed", "message": "이미 처리된 결제예요"},
+        ) from exc
+    except Exception:
+        db.rollback()
+        raise
+
+    return result

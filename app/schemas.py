@@ -197,6 +197,9 @@ class CheckoutRequest(BaseModel):
     amount: int
     benefit_id: str
     method: str
+    paymentKey: Optional[str] = None
+    orderId: Optional[str] = None
+    payment_amount: Optional[int] = None
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +256,9 @@ class MyPassListResponse(BaseModel):
 
 class PassPurchaseRequest(BaseModel):
     duration_days: int
+    paymentKey: str
+    orderId: str
+    amount: int
 
 
 class PassPurchaseResponse(BaseModel):
@@ -261,6 +267,9 @@ class PassPurchaseResponse(BaseModel):
     status: str
     expires_at: UtcDatetime
     paid: int
+    payment_key: str
+    order_id: str
+    payment_status: str
     message: str
 
 

@@ -1,6 +1,12 @@
 import os
 
 
+DEFAULT_TOSS_SECRET_KEY = "test_gsk_docs_OaPz8L5KdmLxqZqRxTmwrlBN"
+TOSS_SECRET_KEY = os.environ.get("TOSS_SECRET_KEY") or DEFAULT_TOSS_SECRET_KEY
+TOSS_CONFIRM_URL = "https://api.tosspayments.com/v1/payments/confirm"
+TOSS_REQUEST_TIMEOUT_SECONDS = 10.0
+
+
 def _int_env(key: str, default: int) -> int:
     value = os.environ.get(key)
     return int(value) if value not in (None, "") else default

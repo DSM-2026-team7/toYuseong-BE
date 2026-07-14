@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -110,6 +110,31 @@ class Payment(Base):
     qr_id: Mapped[int | None] = mapped_column(ForeignKey("payment_qrs.id"), nullable=True)
     amount: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String, nullable=False, default="WAITING")
+
+
+class TossPayment(Base):
+    """토스 승인 결과와 로컬 지급 결과를 연결하는 결제 원장.
+
+    기존 SQLite 파일에도 ``create_all``만으로 추가될 수 있도록 기존 payments
+    테이블을 변경하지 않고 별도 테이블로 둔다.
+    """
+
+    __tablename__ = "toss_payments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    payment_key: Mapped[str] = mapped_column(String(200), nullable=False, unique=True, index=True)
+    order_id: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    purpose: Mapped[str] = mapped_column(String, nullable=False)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    method: Mapped[str | None] = mapped_column(String, nullable=True)
+    store_id: Mapped[int | None] = mapped_column(ForeignKey("stores.id"), nullable=True)
+    pass_id: Mapped[int | None] = mapped_column(ForeignKey("passes.id"), nullable=True)
+    checkout_payment_id: Mapped[int | None] = mapped_column(ForeignKey("payments.id"), nullable=True)
+    user_pass_id: Mapped[int | None] = mapped_column(ForeignKey("user_passes.id"), nullable=True)
+    result_json: Mapped[str] = mapped_column(Text, nullable=False)
+    approved_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 
 
 class UserCoupon(Base):

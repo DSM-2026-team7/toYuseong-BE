@@ -1,10 +1,15 @@
+import json
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.encoders import jsonable_encoder
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.database import get_db
+from app.services.payment_records import completed_result_or_conflict
+from app.toss import confirm_toss_payment
 from app.utils import require_user_id, sync_user_coupon_status, sync_user_pass_status, utc_now
 
 router = APIRouter(tags=["checkout"])
@@ -149,20 +154,36 @@ def do_checkout(payload: schemas.CheckoutRequest, x_user_id: int = Depends(requi
     if store is None:
         return {"result": "fail", "message": "매장을 찾을 수 없어요"}
 
-    now = utc_now()
+    if payload.amount <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "invalid_payment_amount", "message": "주문 금액은 0원보다 커야 해요"},
+        )
+
+    # 이미 승인 및 반영된 유료 결제의 재시도라면 토스를 다시 호출하지 않는다.
+    if payload.paymentKey and payload.orderId and payload.payment_amount is not None and payload.payment_amount > 0:
+        cached_result = completed_result_or_conflict(
+            db,
+            payment_key=payload.paymentKey,
+            order_id=payload.orderId,
+            user_id=x_user_id,
+            purpose="checkout",
+            amount=payload.payment_amount,
+        )
+        if cached_result is not None:
+            return cached_result
+
+    discount = 0
+    benefit_applied = None
+    benefit_kind = "none"
+    consumed = False
+    message = "결제가 완료됐어요"
+    user_coupon = None
+    pass_row = None
 
     if payload.benefit_id == "none":
-        return {
-            "result": "success",
-            "store_name": store.name,
-            "benefit_applied": None,
-            "final_amount": payload.amount,
-            "benefit_kind": "none",
-            "consumed": False,
-            "message": "결제가 완료됐어요",
-        }
-
-    if payload.benefit_id.startswith("coupon:"):
+        pass
+    elif payload.benefit_id.startswith("coupon:"):
         try:
             user_coupon_id = int(payload.benefit_id.split(":", 1)[1])
         except ValueError:
@@ -189,34 +210,11 @@ def do_checkout(payload: schemas.CheckoutRequest, x_user_id: int = Depends(requi
             return {"result": "fail", "message": "사용할 수 없는 쿠폰이에요"}
 
         discount = benefit.discount
-        final_amount = payload.amount - discount
-
-        user_coupon.status = "used"
-        user_coupon.used_at = now
-
-        db.add(
-            models.Transaction(
-                user_id=x_user_id,
-                type="coupon_use",
-                store_name=store.name,
-                amount=-discount,
-                memo=None,
-                created_at=now,
-            )
-        )
-        db.commit()
-
-        return {
-            "result": "success",
-            "store_name": store.name,
-            "benefit_applied": f"{benefit.title} (-{discount:,}원)",
-            "final_amount": final_amount,
-            "benefit_kind": benefit.kind,
-            "consumed": True,
-            "message": "쿠폰이 사용 처리됐어요",
-        }
-
-    if payload.benefit_id.startswith("pass:"):
+        benefit_applied = f"{benefit.title} (-{discount:,}원)"
+        benefit_kind = benefit.kind
+        consumed = True
+        message = "쿠폰이 사용 처리됐어요"
+    elif payload.benefit_id.startswith("pass:"):
         try:
             user_pass_id = int(payload.benefit_id.split(":", 1)[1])
         except ValueError:
@@ -235,28 +233,136 @@ def do_checkout(payload: schemas.CheckoutRequest, x_user_id: int = Depends(requi
             return {"result": "fail", "message": "이 매장에서 사용할 수 없는 패스예요"}
 
         discount = round(payload.amount * pass_row.discount_rate / 100)
-        final_amount = payload.amount - discount
+        benefit_applied = f"{pass_row.name} (-{discount:,}원)"
+        benefit_kind = "pass"
+        message = "패스 할인이 적용됐어요"
+    else:
+        return {"result": "fail", "message": "유효하지 않은 혜택이에요"}
 
-        db.add(
-            models.Transaction(
-                user_id=x_user_id,
-                type="pass_use",
-                store_name=store.name,
-                amount=-discount,
-                memo=None,
-                created_at=now,
-            )
+    final_amount = payload.amount - discount
+    if final_amount < 0:
+        db.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "invalid_discount_amount",
+                "message": "할인 금액이 주문 금액보다 클 수 없어요",
+            },
         )
-        db.commit()
 
-        return {
+    confirmed = None
+    if final_amount > 0:
+        if not payload.paymentKey or not payload.orderId or payload.payment_amount is None:
+            db.rollback()
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "payment_info_required",
+                    "message": "실제 결제 금액이 있으면 토스 결제 정보를 모두 전달해야 해요",
+                },
+            )
+        if payload.payment_amount != final_amount:
+            db.rollback()
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "payment_amount_mismatch",
+                    "message": "결제 금액이 서버에서 계산한 최종 금액과 일치하지 않아요",
+                },
+            )
+        try:
+            confirmed = confirm_toss_payment(
+                payload.paymentKey,
+                payload.orderId,
+                payload.payment_amount,
+            )
+        except Exception:
+            db.rollback()
+            raise
+
+    try:
+        now = utc_now()
+        if user_coupon is not None:
+            user_coupon.status = "used"
+            user_coupon.used_at = now
+            db.add(
+                models.Transaction(
+                    user_id=x_user_id,
+                    type="coupon_use",
+                    store_name=store.name,
+                    amount=-discount,
+                    memo=None,
+                    created_at=now,
+                )
+            )
+        elif pass_row is not None:
+            db.add(
+                models.Transaction(
+                    user_id=x_user_id,
+                    type="pass_use",
+                    store_name=store.name,
+                    amount=-discount,
+                    memo=None,
+                    created_at=now,
+                )
+            )
+
+        payment = models.Payment(store_id=store.id, amount=final_amount, status="DONE")
+        db.add(payment)
+        db.flush()
+
+        payment_status = confirmed["status"] if confirmed is not None else "NOT_REQUIRED"
+        result = {
             "result": "success",
             "store_name": store.name,
-            "benefit_applied": f"{pass_row.name} (-{discount:,}원)",
+            "benefit_applied": benefit_applied,
             "final_amount": final_amount,
-            "benefit_kind": "pass",
-            "consumed": False,
-            "message": "패스 할인이 적용됐어요",
+            "benefit_kind": benefit_kind,
+            "consumed": consumed,
+            "payment_id": payment.id,
+            "payment_key": payload.paymentKey,
+            "order_id": payload.orderId,
+            "payment_status": payment_status,
+            "message": message,
         }
 
-    return {"result": "fail", "message": "유효하지 않은 혜택이에요"}
+        if confirmed is not None:
+            db.add(
+                models.TossPayment(
+                    payment_key=payload.paymentKey,
+                    order_id=payload.orderId,
+                    user_id=x_user_id,
+                    purpose="checkout",
+                    amount=payload.payment_amount,
+                    status=payment_status,
+                    method=confirmed.get("method") or payload.method,
+                    store_id=store.id,
+                    checkout_payment_id=payment.id,
+                    result_json=json.dumps(jsonable_encoder(result), ensure_ascii=False),
+                    approved_at=now,
+                )
+            )
+
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        if confirmed is not None:
+            cached_result = completed_result_or_conflict(
+                db,
+                payment_key=payload.paymentKey,
+                order_id=payload.orderId,
+                user_id=x_user_id,
+                purpose="checkout",
+                amount=payload.payment_amount,
+            )
+            if cached_result is not None:
+                return cached_result
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "payment_already_processed", "message": "이미 처리된 결제예요"},
+        ) from exc
+    except Exception:
+        db.rollback()
+        raise
+
+    return result
