@@ -101,6 +101,7 @@ class Pass(Base):
     )
     scope_category: Mapped[str | None] = mapped_column(String, nullable=True)
     scope_store_id: Mapped[int | None] = mapped_column(ForeignKey("stores.id"), nullable=True)
+    sale_status: Mapped[str] = mapped_column(String, nullable=False, default="on_sale")
 
 
 class UserPass(Base):
@@ -137,3 +138,52 @@ class Notification(Base):
     body: Mapped[str] = mapped_column(String, nullable=False)
     read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+
+
+# ---------------------------------------------------------------------------
+# 구청 관리자용 모델 (web/)
+# ---------------------------------------------------------------------------
+
+
+class StoreApplication(Base):
+    """가맹점 신청·심사 테이블."""
+
+    __tablename__ = "store_applications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    category: Mapped[str] = mapped_column(String, nullable=False)
+    region: Mapped[str] = mapped_column(String, nullable=False)
+    business_number: Mapped[str] = mapped_column(String, nullable=False)
+    business_hours: Mapped[str] = mapped_column(String, nullable=False)
+    phone: Mapped[str] = mapped_column(String, nullable=False)
+    applicant_name: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    reject_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    applied_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class Settlement(Base):
+    """패스 사용 보전금 정산 기록."""
+
+    __tablename__ = "settlements"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
+    year: Mapped[int] = mapped_column(Integer, nullable=False)
+    month: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class PassPriceTier(Base):
+    """패스 기간별 가격 옵션."""
+
+    __tablename__ = "pass_price_tiers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    pass_id: Mapped[int] = mapped_column(ForeignKey("passes.id"), nullable=False)
+    duration_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    price: Mapped[int] = mapped_column(Integer, nullable=False)
