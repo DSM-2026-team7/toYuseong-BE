@@ -7,7 +7,7 @@ from fastapi import HTTPException
 
 TOSS_SECRET_KEY = os.environ.get(
     "TOSS_SECRET_KEY",
-    "test_gsk_docs_OaPz8L5KdmLxqZqRxTmwrlBN",
+    "test_sk_zXLkKEypNArWmo50nX3lmeaxYG5R",
 )
 
 
