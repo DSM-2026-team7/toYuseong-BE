@@ -71,6 +71,9 @@ def test_register_shop_and_duplicate_business_number(client):
     db.commit(); db.close()
     headers = {"Authorization": "Bearer owner-999"}
     body = {"name": "새 가게", "register_num": "123-45-67890", "category": "cafe",
-            "region": "유성구", "phone_no": "010-1234-5678"}
-    assert client.post("/admin/register", headers=headers, json=body).status_code == 201
+            "address": "대전 유성구 궁동 1", "region": "유성구 궁동",
+            "phone_no": "010-1234-5678"}
+    first = client.post("/admin/register", headers=headers, json=body)
+    assert first.status_code == 201
+    assert first.json()["status"] == "pending"
     assert client.post("/admin/register", headers=headers, json=body).status_code == 409

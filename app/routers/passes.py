@@ -38,7 +38,12 @@ def list_passes(
     x_user_id: Optional[int] = Depends(get_optional_user_id),
     db: Session = Depends(get_db),
 ):
-    passes = db.query(models.Pass).order_by(models.Pass.id.asc()).all()
+    passes = (
+        db.query(models.Pass)
+        .filter(models.Pass.sale_status == "on_sale")
+        .order_by(models.Pass.id.asc())
+        .all()
+    )
     owned_ids = _owned_pass_ids(db, x_user_id)
 
     items = [
@@ -50,6 +55,7 @@ def list_passes(
             duration_days=p.duration_days,
             price=p.price,
             discount_rate=p.discount_rate,
+            max_discount_amount=p.max_discount_amount,
             target_desc=p.target_desc,
             owned=p.id in owned_ids,
         )
@@ -61,18 +67,28 @@ def list_passes(
 @router.get("/passes/{pass_id}", response_model=schemas.PassDetailResponse)
 def get_pass(pass_id: int, x_user_id: Optional[int] = Depends(get_optional_user_id), db: Session = Depends(get_db)):
     pass_row = db.get(models.Pass, pass_id)
-    if pass_row is None:
+    if pass_row is None or pass_row.sale_status != "on_sale":
         raise HTTPException(status_code=404, detail=PASS_NOT_FOUND_ERROR)
 
     owned = pass_id in _owned_pass_ids(db, x_user_id)
 
+    tiers = (
+        db.query(models.PassPriceTier)
+        .filter(models.PassPriceTier.pass_id == pass_id)
+        .order_by(models.PassPriceTier.duration_days.asc())
+        .all()
+    )
     return schemas.PassDetailResponse(
         id=pass_row.id,
         name=pass_row.name,
         scope=pass_row.scope,
         discount_rate=pass_row.discount_rate,
+        max_discount_amount=pass_row.max_discount_amount,
         target_desc=pass_row.target_desc,
-        price_options=[schemas.PassPriceOption(duration_days=pass_row.duration_days, price=pass_row.price)],
+        price_options=(
+            [schemas.PassPriceOption(duration_days=t.duration_days, price=t.price) for t in tiers]
+            or [schemas.PassPriceOption(duration_days=pass_row.duration_days, price=pass_row.price)]
+        ),
         usage_note=pass_row.usage_note,
         notice=NOTICE,
         owned=owned,
@@ -93,15 +109,26 @@ def list_my_passes(
         if status != "all" and user_pass.status != status:
             continue
         pass_row = db.get(models.Pass, user_pass.pass_id)
+        if pass_row is None:
+            continue
+        discount_limit = user_pass.discount_limit
+        if discount_limit is None:
+            discount_limit = pass_row.max_discount_amount
+        remaining_discount = (
+            max(discount_limit - user_pass.discount_used, 0) if discount_limit is not None else None
+        )
         items.append(
             schemas.MyPassItem(
                 user_pass_id=user_pass.id,
-                name=pass_row.name,
-                scope=pass_row.scope,
-                discount_rate=pass_row.discount_rate,
+                name=user_pass.name_snapshot or pass_row.name,
+                scope=user_pass.scope_snapshot or pass_row.scope,
+                discount_rate=user_pass.discount_rate_snapshot or pass_row.discount_rate,
                 status=user_pass.status,
                 expires_at=user_pass.expires_at,
                 d_day=compute_d_day(user_pass.expires_at),
+                discount_used=user_pass.discount_used,
+                discount_limit=discount_limit,
+                remaining_discount=remaining_discount,
             )
         )
 
@@ -117,10 +144,19 @@ def purchase_pass(
     db: Session = Depends(get_db),
 ):
     pass_row = db.get(models.Pass, pass_id)
-    if pass_row is None:
+    if pass_row is None or pass_row.sale_status != "on_sale":
         raise HTTPException(status_code=404, detail=PASS_NOT_FOUND_ERROR)
 
-    if payload.amount != pass_row.price:
+    tier = (
+        db.query(models.PassPriceTier)
+        .filter(
+            models.PassPriceTier.pass_id == pass_id,
+            models.PassPriceTier.duration_days == payload.duration_days,
+        )
+        .first()
+    )
+    expected_price = tier.price if tier is not None else pass_row.price
+    if payload.amount != expected_price:
         raise HTTPException(
             status_code=400,
             detail={
@@ -128,7 +164,7 @@ def purchase_pass(
                 "message": "결제 금액이 패스 가격과 일치하지 않아요",
             },
         )
-    if payload.duration_days != pass_row.duration_days:
+    if tier is None and payload.duration_days != pass_row.duration_days:
         raise HTTPException(
             status_code=400,
             detail={"error": "invalid_pass_option", "message": "선택한 패스 기간을 확인해 주세요"},
@@ -153,38 +189,80 @@ def purchase_pass(
 
     try:
         now = utc_now()
-        expires_at = now + timedelta(days=payload.duration_days)
-
-        user_pass = models.UserPass(
-            user_id=x_user_id,
-            pass_id=pass_row.id,
-            status="active",
-            purchased_at=now,
-            expires_at=expires_at,
+        user_pass = (
+            db.query(models.UserPass)
+            .filter(
+                models.UserPass.user_id == x_user_id,
+                models.UserPass.pass_id == pass_row.id,
+                models.UserPass.status == "active",
+            )
+            .first()
         )
-        db.add(user_pass)
-        db.flush()
+        extended = user_pass is not None
+        if user_pass is not None:
+            if user_pass.name_snapshot is None:
+                user_pass.name_snapshot = pass_row.name
+                user_pass.scope_snapshot = pass_row.scope
+                user_pass.scope_category_snapshot = pass_row.scope_category
+                user_pass.scope_store_id_snapshot = pass_row.scope_store_id
+                user_pass.discount_rate_snapshot = pass_row.discount_rate
+            if user_pass.max_discount_snapshot is None:
+                user_pass.max_discount_snapshot = pass_row.max_discount_amount
+            base_expiry = max(user_pass.expires_at, now)
+            user_pass.expires_at = base_expiry + timedelta(days=payload.duration_days)
+            additional_limit = user_pass.max_discount_snapshot
+            if additional_limit is not None:
+                current_limit = user_pass.discount_limit or additional_limit
+                user_pass.discount_limit = current_limit + additional_limit
+        else:
+            user_pass = models.UserPass(
+                user_id=x_user_id,
+                pass_id=pass_row.id,
+                status="active",
+                purchased_at=now,
+                expires_at=now + timedelta(days=payload.duration_days),
+                discount_used=0,
+                discount_limit=pass_row.max_discount_amount,
+                name_snapshot=pass_row.name,
+                scope_snapshot=pass_row.scope,
+                scope_category_snapshot=pass_row.scope_category,
+                scope_store_id_snapshot=pass_row.scope_store_id,
+                discount_rate_snapshot=pass_row.discount_rate,
+                max_discount_snapshot=pass_row.max_discount_amount,
+            )
+            db.add(user_pass)
+            db.flush()
+        expires_at = user_pass.expires_at
+        effective_name = user_pass.name_snapshot or pass_row.name
 
         db.add(
             models.Transaction(
                 user_id=x_user_id,
                 type="pass_purchase",
                 store_name=None,
-                amount=pass_row.price,
-                memo=pass_row.name,
+                store_id=None,
+                amount=expected_price,
+                memo=f"{effective_name} 기간 연장" if extended else effective_name,
                 created_at=now,
             )
         )
         result = {
             "user_pass_id": user_pass.id,
-            "name": pass_row.name,
+            "name": effective_name,
             "status": "active",
             "expires_at": expires_at,
-            "paid": pass_row.price,
+            "paid": expected_price,
             "payment_key": payload.paymentKey,
             "order_id": payload.orderId,
             "payment_status": confirmed["status"],
-            "message": "패스 구매가 완료됐어요",
+            "extended": extended,
+            "discount_limit": user_pass.discount_limit,
+            "remaining_discount": (
+                max(user_pass.discount_limit - user_pass.discount_used, 0)
+                if user_pass.discount_limit is not None
+                else None
+            ),
+            "message": "패스 기간이 연장됐어요" if extended else "패스 구매가 완료됐어요",
         }
         db.add(
             models.TossPayment(

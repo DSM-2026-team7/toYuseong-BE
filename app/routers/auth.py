@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.database import get_db
+from app.google_oauth import verify_google_credential
+from app.utils import create_user_token, owner_verification_status, require_user_id, user_roles
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -60,8 +62,12 @@ def login(body: schemas.AuthLoginRequest, db: Session = Depends(get_db)):
     user = db.get(models.User, body.user_id)
     if user is None:
         raise HTTPException(status_code=404, detail=USER_NOT_FOUND_ERROR)
-    if user.role != body.role:
+    role_enabled = user.owner_enabled if body.role == "owner" else user.customer_enabled
+    if not role_enabled:
         raise HTTPException(status_code=403, detail=_role_mismatch_error(body.role))
+
+    user.role = body.role
+    db.commit()
 
     if body.role == "owner":
         store = _owner_store(db, user.id)
@@ -80,3 +86,77 @@ def login(body: schemas.AuthLoginRequest, db: Session = Depends(get_db)):
         nickname=user.nickname,
         region=user.region,
     )
+
+
+@router.post("/google", response_model=schemas.GoogleLoginResponse)
+def google_login(body: schemas.GoogleLoginRequest, db: Session = Depends(get_db)):
+    claims = verify_google_credential(body.credential)
+    google_sub = str(claims["sub"])
+    user = db.query(models.User).filter(models.User.google_sub == google_sub).first()
+    is_new = user is None
+
+    if user is None:
+        nickname = str(claims.get("name") or claims.get("email") or "사용자")
+        user = models.User(
+            google_sub=google_sub,
+            email=claims.get("email"),
+            profile_image_url=claims.get("picture"),
+            nickname=nickname,
+            region="",
+            role="pending",
+            customer_enabled=False,
+            owner_enabled=False,
+            onboarding_completed=False,
+            location_permission="unknown",
+        )
+        db.add(user)
+        db.flush()
+    else:
+        user.email = claims.get("email") or user.email
+        user.profile_image_url = claims.get("picture") or user.profile_image_url
+
+    db.commit()
+    return schemas.GoogleLoginResponse(
+        user_id=user.id,
+        token=create_user_token(user.id),
+        role=user.role,
+        roles=user_roles(user),
+        is_new=is_new,
+        requires_role_selection=not user.onboarding_completed,
+        nickname=user.nickname,
+        email=user.email,
+        profile_image_url=user.profile_image_url,
+        store_verification=owner_verification_status(db, user.id),
+    )
+
+
+@router.post("/role", response_model=schemas.RoleSwitchResponse)
+def select_role(
+    body: schemas.RoleSelectRequest,
+    x_user_id: int = Depends(require_user_id),
+    db: Session = Depends(get_db),
+):
+    user = db.get(models.User, x_user_id)
+    if body.role == "customer":
+        user.customer_enabled = True
+    else:
+        user.owner_enabled = True
+    user.role = body.role
+    user.onboarding_completed = True
+    if body.region is not None:
+        user.region = body.region
+    db.commit()
+
+    verification = owner_verification_status(db, user.id)
+    store_required = body.role == "owner" and verification != "approved"
+    return schemas.RoleSwitchResponse(
+        role=body.role,
+        roles=user_roles(user),
+        store_verification_required=store_required,
+        store_verification=verification,
+    )
+
+
+@router.post("/logout", response_model=schemas.LogoutResponse)
+def logout():
+    return schemas.LogoutResponse(message="로그아웃됐어요")

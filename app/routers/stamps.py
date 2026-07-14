@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.database import get_db
-from app.utils import require_user_id, utc_now
+from app.utils import require_user_id, seoul_day_bounds, utc_now
 
 router = APIRouter(tags=["stamps"])
 
@@ -16,7 +16,19 @@ INVALID_QR_ERROR = {"error": "invalid_qr", "message": "유효하지 않은 QR이
 ALREADY_STAMPED_ERROR = {"error": "already_stamped_today", "message": "오늘은 이미 적립했어요"}
 ALREADY_USED_QR_ERROR = {"error": "already_used", "message": "이미 처리된 QR이에요"}
 
-REWARD_COUPON_VALID_DAYS = 30
+def stamped_today(db: Session, user_id: int, now: Optional[datetime] = None) -> bool:
+    start, end = seoul_day_bounds(now)
+    return (
+        db.query(models.Transaction)
+        .filter(
+            models.Transaction.user_id == user_id,
+            models.Transaction.type == "stamp_earn",
+            models.Transaction.created_at >= start,
+            models.Transaction.created_at < end,
+        )
+        .first()
+        is not None
+    )
 
 
 def _decode_customer_token(token: str) -> int:
@@ -31,7 +43,13 @@ def _decode_customer_token(token: str) -> int:
     raise ValueError("invalid customer_token")
 
 
-def _earn_stamp(db: Session, user_id: int, store: models.Store, now: datetime) -> dict:
+def _earn_stamp(
+    db: Session,
+    user_id: int,
+    store: models.Store,
+    now: datetime,
+    amount: Optional[int] = None,
+) -> dict:
     """스탬프 1개를 적립하고 응답 필드를 dict로 돌려준다. 커밋은 호출자 책임.
 
     POST /stamps(레거시)와 POST /scan(신규, type=stamp) 양쪽이 이 로직을 공유한다.
@@ -41,8 +59,15 @@ def _earn_stamp(db: Session, user_id: int, store: models.Store, now: datetime) -
         .filter(models.StampPolicy.store_id == store.id)
         .first()
     )
-    if policy is None:
+    if policy is None or not policy.active:
         raise HTTPException(status_code=400, detail=INVALID_QR_ERROR)
+    if (amount or 0) < policy.min_amount:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "stamp_minimum_not_met", "message": "기준 금액을 충족하지 못했습니다."},
+        )
+    if stamped_today(db, user_id, now):
+        raise HTTPException(status_code=409, detail=ALREADY_STAMPED_ERROR)
 
     card = (
         db.query(models.StampCard)
@@ -52,12 +77,22 @@ def _earn_stamp(db: Session, user_id: int, store: models.Store, now: datetime) -
 
     card_created = False
     if card is None:
-        card = models.StampCard(user_id=user_id, store_id=store.id, current=0, updated_at=now)
+        card = models.StampCard(
+            user_id=user_id,
+            store_id=store.id,
+            current=0,
+            completed_count=0,
+            updated_at=now,
+        )
         db.add(card)
         db.flush()
         card_created = True
-    elif card.updated_at.date() == now.date():
-        raise HTTPException(status_code=409, detail=ALREADY_STAMPED_ERROR)
+
+    if policy.completion_limit is not None and card.completed_count >= policy.completion_limit:
+        raise HTTPException(
+            status_code=409,
+            detail={"error": "stamp_completion_limit_reached", "message": "스탬프 완성 가능 횟수를 모두 사용했어요"},
+        )
 
     card.current += 1
     card.updated_at = now
@@ -67,6 +102,7 @@ def _earn_stamp(db: Session, user_id: int, store: models.Store, now: datetime) -
             user_id=user_id,
             type="stamp_earn",
             store_name=store.name,
+            store_id=store.id,
             amount=None,
             memo=f"+1 · {card.current}/{policy.goal}",
             created_at=now,
@@ -79,18 +115,23 @@ def _earn_stamp(db: Session, user_id: int, store: models.Store, now: datetime) -
     card_reset_to: Optional[int] = None
 
     if reward_reached:
-        valid_until = now + timedelta(days=REWARD_COUPON_VALID_DAYS)
+        reward_valid_days = policy.reward_valid_days
+        valid_until = now + timedelta(days=reward_valid_days) if reward_valid_days is not None else None
         reward_coupon_row = models.Coupon(
             store_id=store.id,
-            type="discount_amount",
+            type=policy.reward_type,
             title=f"{policy.reward} 쿠폰",
-            value=0,
+            value=policy.reward_value,
             target=policy.reward,
             valid_until=valid_until,
             time_limit_hours=None,
             store_only=True,
-            min_payment=0,
-            max_discount=None,
+            min_payment=policy.reward_min_payment,
+            max_discount=policy.reward_max_discount,
+            is_coupon_infinity=True,
+            status="active",
+            created_at=now,
+            source="stamp_reward",
         )
         db.add(reward_coupon_row)
         db.flush()
@@ -111,6 +152,7 @@ def _earn_stamp(db: Session, user_id: int, store: models.Store, now: datetime) -
                 user_id=user_id,
                 type="reward_issue",
                 store_name=store.name,
+                store_id=store.id,
                 amount=None,
                 memo=f"스탬프 {policy.goal}/{policy.goal}",
                 created_at=now,
@@ -118,16 +160,17 @@ def _earn_stamp(db: Session, user_id: int, store: models.Store, now: datetime) -
         )
 
         card.current = 0
+        card.completed_count += 1
         card_reset_to = 0
 
         reward_coupon_payload = schemas.RewardCoupon(
             user_coupon_id=user_coupon.id,
             title=reward_coupon_row.title,
-            d_day=REWARD_COUPON_VALID_DAYS,
+            d_day=reward_valid_days,
         )
 
     if reward_reached:
-        message = "5개 완성! 리워드 쿠폰이 발급됐어요"
+        message = f"{policy.goal}개 완성! 리워드 쿠폰이 발급됐어요"
     elif card_created:
         message = f"{store.name} 스탬프가 시작됐어요"
     else:
@@ -167,7 +210,7 @@ def create_stamp(payload: schemas.StampRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail=INVALID_QR_ERROR)
 
     now = utc_now()
-    result = _earn_stamp(db, user_id, store, now)
+    result = _earn_stamp(db, user_id, store, now, amount=payload.amount)
     db.commit()
 
     return schemas.StampResponse(**result)
@@ -185,7 +228,8 @@ def scan_qr(
     - stamp: 즉시 스탬프 적립(기존 POST /stamps와 동일 로직)
     - payment: 결제 준비 상태만 알려주고, 이후 손님 앱은 그 store_id/amount로
       GET /checkout/benefits → POST /checkout을 이어서 호출한다.
-    QR은 1회용이라 성공적으로 처리되면 즉시 소진(CONSUMED)된다.
+    스탬프 QR은 적립 성공 즉시 소진되고, 결제 QR은 SCANNED 상태로 예약한 뒤
+    POST /checkout에서 결제가 성공해야 최종 소진(CONSUMED)된다.
     """
     qr = (
         db.query(models.PaymentQr)
@@ -196,6 +240,10 @@ def scan_qr(
         raise HTTPException(status_code=400, detail=INVALID_QR_ERROR)
     if qr.status != "WAITING":
         raise HTTPException(status_code=409, detail=ALREADY_USED_QR_ERROR)
+    if qr.expires_at is not None and utc_now() > qr.expires_at:
+        qr.status = "EXPIRED"
+        db.commit()
+        raise HTTPException(status_code=410, detail={"error": "expired_qr", "message": "만료된 QR이에요"})
 
     store = db.get(models.Store, qr.store_id)
     if store is None:
@@ -206,15 +254,18 @@ def scan_qr(
     if qr.type == "stamp":
         # _earn_stamp가 400/409를 던질 수 있으니, 성공했을 때만 QR을 소진 처리한다
         # (스탬프 적립이 실패하면 같은 QR을 나중에 다시 스캔할 수 있어야 하므로).
-        result = _earn_stamp(db, x_user_id, store, now)
+        result = _earn_stamp(db, x_user_id, store, now, amount=qr.amount)
         qr.status = "CONSUMED"
         qr.consumed_at = now
         qr.consumed_by = x_user_id
         db.commit()
         return {"kind": "stamp", "amount": qr.amount, **result}
 
-    qr.status = "CONSUMED"
-    qr.consumed_at = now
+    if qr.type != "payment":
+        raise HTTPException(status_code=400, detail=INVALID_QR_ERROR)
+
+    qr.status = "SCANNED"
+    qr.scanned_at = now
     qr.consumed_by = x_user_id
     db.commit()
 
@@ -223,5 +274,6 @@ def scan_qr(
         "store_id": store.id,
         "store_name": store.name,
         "amount": qr.amount,
+        "qr_token": qr.token,
         "checkout_ready": True,
     }

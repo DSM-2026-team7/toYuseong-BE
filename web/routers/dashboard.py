@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app import models
 from app.database import get_db
+from app.utils import seoul_month_bounds
 from web import schemas
 from web.auth import require_admin
 
@@ -24,10 +25,15 @@ def get_dashboard(db: Session = Depends(get_db)):
     )
     registered_stores = db.query(func.count(models.Store.id)).scalar() or 0
 
-    # 보전 예상 금액 = 쿠폰/패스 사용 할인액의 절댓값 합
+    # 이번 달 보전 예상 금액 = 패스 사용 할인액만 합산 (쿠폰은 매장 부담)
+    month_start, next_month = seoul_month_bounds()
     subsidy = (
         db.query(func.sum(func.abs(models.Transaction.amount)))
-        .filter(models.Transaction.type.in_(["coupon_use", "pass_use"]))
+        .filter(
+            models.Transaction.type == "pass_use",
+            models.Transaction.created_at >= month_start,
+            models.Transaction.created_at < next_month,
+        )
         .scalar()
         or 0
     )

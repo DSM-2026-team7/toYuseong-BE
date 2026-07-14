@@ -49,14 +49,15 @@ def test_login_as_owner_returns_token_for_admin_api(client: TestClient):
     assert shop.json()["name"] == "동네커피 유성점"
 
 
-def test_login_role_mismatch_returns_403(client: TestClient):
+def test_login_supports_customer_owner_dual_role(client: TestClient):
     res = client.post("/auth/login", json={"role": "owner", "user_id": 100})
     assert res.status_code == 403
     assert res.json() == {"error": "role_mismatch", "message": "사장님 계정이 아니에요"}
 
     res2 = client.post("/auth/login", json={"role": "customer", "user_id": 1})
-    assert res2.status_code == 403
-    assert res2.json() == {"error": "role_mismatch", "message": "사용자 계정이 아니에요"}
+    assert res2.status_code == 200
+    assert res2.json()["role"] == "customer"
+    assert res2.json()["user_id"] == 1
 
 
 def test_login_unknown_user_returns_404(client: TestClient):

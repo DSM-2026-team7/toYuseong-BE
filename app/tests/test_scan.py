@@ -5,11 +5,11 @@ CUSTOMER_HEADERS = {"X-User-Id": "100"}
 
 
 def test_scan_stamp_qr_awards_stamp_and_is_single_use(client: TestClient):
-    created = client.post("/admin/qrs/stamp", headers=OWNER_AUTH, json={})
+    created = client.post("/admin/qrs/stamp", headers=OWNER_AUTH, json={"amount": 5000})
     assert created.status_code == 201
     body = created.json()
     assert body["type"] == "stamp"
-    assert body["amount"] is None
+    assert body["amount"] == 5000
     token = body["token"]
 
     res = client.post("/scan", headers=CUSTOMER_HEADERS, json={"qr_token": token})
@@ -53,6 +53,7 @@ def test_scan_payment_qr_returns_checkout_ready(client: TestClient):
         "store_name": "동네커피 유성점",
         "amount": 18000,
         "checkout_ready": True,
+        "qr_token": token,
     }
 
     res2 = client.post("/scan", headers=CUSTOMER_HEADERS, json={"qr_token": token})
@@ -72,13 +73,13 @@ def test_scan_requires_customer_auth(client: TestClient):
 
 def test_scan_stamp_failure_leaves_qr_reusable(client: TestClient):
     """오늘 이미 적립했으면 409가 나지만, QR 자체는 소진되지 않아야 다음날 재사용 가능."""
-    created = client.post("/admin/qrs/stamp", headers=OWNER_AUTH, json={})
+    created = client.post("/admin/qrs/stamp", headers=OWNER_AUTH, json={"amount": 5000})
     token = created.json()["token"]
 
     first = client.post("/scan", headers=CUSTOMER_HEADERS, json={"qr_token": token})
     assert first.status_code == 200
 
-    created2 = client.post("/admin/qrs/stamp", headers=OWNER_AUTH, json={})
+    created2 = client.post("/admin/qrs/stamp", headers=OWNER_AUTH, json={"amount": 5000})
     token2 = created2.json()["token"]
     second = client.post("/scan", headers=CUSTOMER_HEADERS, json={"qr_token": token2})
     assert second.status_code == 409

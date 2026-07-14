@@ -1,5 +1,6 @@
 import base64
 import json
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -7,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import models, schemas
 from app.database import get_db
-from app.utils import require_user_id
+from app.utils import compute_d_day, owner_verification_status, require_user_id, user_roles, utc_now
 
 router = APIRouter(tags=["me"])
 
@@ -17,6 +18,7 @@ FILTER_TYPES = {
     "coupon": ["coupon_use", "coupon_claim", "coupon_expire"],
     "stamp": ["stamp_earn", "reward_issue"],
     "pass": ["pass_use", "pass_purchase"],
+    "benefit": ["coupon_use", "pass_use"],
 }
 
 
@@ -50,7 +52,87 @@ def get_me(x_user_id: int = Depends(require_user_id), db: Session = Depends(get_
         region=user.region,
         role=user.role,
         unread_notifications=unread_count,
+        email=user.email,
+        profile_image_url=user.profile_image_url,
+        roles=user_roles(user),
+        onboarding_completed=user.onboarding_completed,
+        location_permission=user.location_permission,
+        store_verification=owner_verification_status(db, user.id),
     )
+
+
+@router.patch("/me/role", response_model=schemas.RoleSwitchResponse)
+def switch_role(
+    body: schemas.RoleSelectRequest,
+    x_user_id: int = Depends(require_user_id),
+    db: Session = Depends(get_db),
+):
+    user = db.get(models.User, x_user_id)
+    if body.role == "customer":
+        user.customer_enabled = True
+    else:
+        user.owner_enabled = True
+    user.role = body.role
+    user.onboarding_completed = True
+    if body.region is not None:
+        user.region = body.region
+    db.commit()
+
+    verification = owner_verification_status(db, user.id)
+    return schemas.RoleSwitchResponse(
+        role=body.role,
+        roles=user_roles(user),
+        store_verification_required=body.role == "owner" and verification != "approved",
+        store_verification=verification,
+    )
+
+
+@router.patch("/me/preferences", response_model=schemas.MeResponse)
+def update_preferences(
+    body: schemas.UserPreferencesRequest,
+    x_user_id: int = Depends(require_user_id),
+    db: Session = Depends(get_db),
+):
+    user = db.get(models.User, x_user_id)
+    if body.location_permission is not None:
+        user.location_permission = body.location_permission
+    if body.region is not None:
+        user.region = body.region
+    db.commit()
+    return get_me(x_user_id=x_user_id, db=db)
+
+
+@router.get("/me/stamps", response_model=schemas.MyStampListResponse)
+def list_my_stamps(x_user_id: int = Depends(require_user_id), db: Session = Depends(get_db)):
+    cards = (
+        db.query(models.StampCard)
+        .filter(models.StampCard.user_id == x_user_id)
+        .order_by(models.StampCard.updated_at.desc())
+        .all()
+    )
+    items: list[schemas.MyStampItem] = []
+    for card in cards:
+        store = db.get(models.Store, card.store_id)
+        policy = db.query(models.StampPolicy).filter(models.StampPolicy.store_id == card.store_id).first()
+        if store is None or policy is None or not policy.active:
+            continue
+        if policy.expiry_date is not None and policy.expiry_date < utc_now():
+            continue
+        items.append(
+            schemas.MyStampItem(
+                stamp_card_id=card.id,
+                store_id=store.id,
+                store_name=store.name,
+                current=card.current,
+                goal=policy.goal,
+                reward=policy.reward,
+                updated_at=card.updated_at,
+                expires_at=policy.expiry_date,
+                d_day=compute_d_day(policy.expiry_date),
+            )
+        )
+    items.sort(key=lambda item: (item.expires_at is None, item.expires_at or datetime.max))
+    return schemas.MyStampListResponse(stamps=items)
 
 
 @router.get("/me/notifications", response_model=schemas.NotificationsResponse)

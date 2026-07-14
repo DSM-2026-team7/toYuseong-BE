@@ -3,3 +3,4 @@ sqlalchemy
 pyjwt
 pytest
 httpx
+google-auth

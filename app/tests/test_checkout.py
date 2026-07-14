@@ -144,8 +144,8 @@ def test_checkout_success_consumes_coupon_and_logs_transaction(client: TestClien
         },
         headers=HEADERS,
     )
-    assert res2.status_code == 200
-    assert res2.json()["result"] == "fail"
+    assert res2.status_code == 400
+    assert res2.json()["error"] == "coupon_unavailable"
 
     transactions = client.get("/me/transactions", headers=HEADERS).json()["transactions"]
     assert any(t["type"] == "coupon_use" and t["amount"] == -1800 for t in transactions)

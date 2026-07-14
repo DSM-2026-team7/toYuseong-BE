@@ -28,6 +28,17 @@ def backdate_card(days: int) -> None:
         )
         assert card is not None
         card.updated_at = utc_now() - timedelta(days=days)
+        latest_earn = (
+            db.query(models.Transaction)
+            .filter(
+                models.Transaction.user_id == DEMO_USER_ID,
+                models.Transaction.type == "stamp_earn",
+            )
+            .order_by(models.Transaction.created_at.desc())
+            .first()
+        )
+        assert latest_earn is not None
+        latest_earn.created_at = utc_now() - timedelta(days=days)
         db.commit()
     finally:
         db.close()

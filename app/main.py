@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app import database
+from app.migrations import ensure_compatibility_columns
 from app.routers import admin, checkout, coupons, me, passes, stamps, stores
 from app.routers import auth as demo_auth
 from app.seed import run_seed
@@ -19,6 +20,7 @@ async def lifespan(app: FastAPI):
     # (테스트에서 in-memory DB로 바꿔치기한 뒤 이 lifespan을 다시 태울 수 있어야 하므로
     #  import 시점에 이름을 고정 바인딩하지 않는다.)
     database.Base.metadata.create_all(bind=database.engine)
+    ensure_compatibility_columns(database.engine)
     db = database.SessionLocal()
     try:
         run_seed(db)
