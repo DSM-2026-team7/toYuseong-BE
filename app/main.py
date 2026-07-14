@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from app import database
 from app.routers import checkout, coupons, me, passes, stamps, stores
 from app.seed import run_seed
-from web.routers import applications, dashboard, passes as admin_passes, settlements
+from web.routers import applications, auth, dashboard, passes as admin_passes, settlements
 
 
 @asynccontextmanager
@@ -54,6 +54,7 @@ app.include_router(passes.router)
 app.include_router(me.router)
 
 # 구청 관리자 API (web/)
+app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(applications.router)
 app.include_router(settlements.router)

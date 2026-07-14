@@ -5,8 +5,9 @@ from sqlalchemy.orm import Session
 from app import models
 from app.database import get_db
 from web import schemas
+from web.auth import require_admin
 
-router = APIRouter(prefix="/admin", tags=["admin-dashboard"])
+router = APIRouter(prefix="/admin", tags=["admin-dashboard"], dependencies=[Depends(require_admin)])
 
 
 @router.get("/dashboard", response_model=schemas.DashboardResponse)

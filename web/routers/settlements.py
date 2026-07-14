@@ -8,8 +8,9 @@ from app import models
 from app.database import get_db
 from app.utils import utc_now
 from web import schemas
+from web.auth import require_admin
 
-router = APIRouter(prefix="/admin", tags=["admin-settlements"])
+router = APIRouter(prefix="/admin", tags=["admin-settlements"], dependencies=[Depends(require_admin)])
 
 
 def _mask_name(name: str) -> str:

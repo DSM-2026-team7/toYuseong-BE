@@ -4,8 +4,9 @@ from sqlalchemy.orm import Session
 from app import models
 from app.database import get_db
 from web import schemas
+from web.auth import require_admin
 
-router = APIRouter(prefix="/admin", tags=["admin-passes"])
+router = APIRouter(prefix="/admin", tags=["admin-passes"], dependencies=[Depends(require_admin)])
 
 NOT_FOUND = {"error": "pass_not_found", "message": "패스를 찾을 수 없어요"}
 

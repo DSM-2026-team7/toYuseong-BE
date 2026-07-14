@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 
 from app import config, models
 from app.utils import utc_now
+from web.auth import hash_password
 
 DEMO_USER_ID = 100
 
@@ -165,5 +166,13 @@ def run_seed(db: Session) -> None:
     ]
     db.add_all(price_tiers)
 
-    db.commit()
+    # 기본 관리자 계정
+    db.add(
+        models.AdminUser(
+            username="admin",
+            hashed_password=hash_password("admin1234"),
+            name="유성구청 관리자",
+        )
+    )
 
+    db.commit()

@@ -7,8 +7,9 @@ from app import models
 from app.database import get_db
 from app.utils import utc_now
 from web import schemas
+from web.auth import require_admin
 
-router = APIRouter(prefix="/admin", tags=["admin-applications"])
+router = APIRouter(prefix="/admin", tags=["admin-applications"], dependencies=[Depends(require_admin)])
 
 NOT_FOUND = {"error": "application_not_found", "message": "신청 건을 찾을 수 없어요"}
 ALREADY_REVIEWED = {"error": "already_reviewed", "message": "이미 심사가 완료된 건이에요"}
