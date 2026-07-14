@@ -1,4 +1,4 @@
-"""관리자 로그인 + 인증 흐름 검증."""
+"""관리자 로그인 + 초기 비밀번호 변경 흐름 검증."""
 from fastapi.testclient import TestClient
 from app.main import app
 import os
@@ -10,52 +10,61 @@ if os.path.exists("toyuseong.db"):
         pass
 
 with TestClient(app) as client:
-    # 1. 로그인 실패 (잘못된 비밀번호)
-    print("=== Login Fail ===")
-    r = client.post("/admin/auth/login", json={"username": "admin", "password": "wrong"})
-    assert r.status_code == 401
-    print(f"  401 OK: {r.json()}")
 
-    # 2. 로그인 성공
-    print("\n=== Login Success ===")
+    # 1. 초기 로그인 (임시 비밀번호)
+    print("=== 1. Login with temp password ===")
     r = client.post("/admin/auth/login", json={"username": "admin", "password": "admin1234"})
     assert r.status_code == 200
     data = r.json()
-    token = data["token"]
-    print(f"  name: {data['name']}")
-    print(f"  token: {token}")
+    temp_token = data["token"]
+    print(f"  must_change_password: {data['must_change_password']}")
+    assert data["must_change_password"] is True
 
-    # 로컬에서 토큰 검증
-    from web.auth import decode_token
-    try:
-        payload = decode_token(token)
-        print(f"  local decode OK: {payload}")
-    except Exception as e:
-        print(f"  local decode FAIL: {e}")
-
-    # 3. 토큰 없이 admin API 호출 → 403
-    print("\n=== No Token → 403 ===")
-    r = client.get("/admin/dashboard")
-    assert r.status_code in (401, 403), f"Expected 401 or 403, got {r.status_code}"
-    print(f"  {r.status_code} OK: unauthorized blocked")
-
-    # 4. 토큰으로 admin API 호출 → 200
-    print("\n=== With Token → 200 ===")
-    headers = {"Authorization": f"Bearer {token}"}
+    # 2. 비밀번호 미변경 상태로 admin API 접근 시도 -> 403
+    print("\n=== 2. Access admin API without changing password -> 403 ===")
+    headers = {"Authorization": f"Bearer {temp_token}"}
     r = client.get("/admin/dashboard", headers=headers)
-    print(f"  status: {r.status_code}, body: {r.text[:200]}")
+    assert r.status_code == 403
+    print(f"  {r.status_code}: {r.json()}")
+
+    # 3. 비밀번호 변경
+    print("\n=== 3. Change password ===")
+    r = client.post(
+        "/admin/auth/change-password",
+        json={"new_password": "newpass5678"},
+        headers=headers,
+    )
+    assert r.status_code == 200
+    data = r.json()
+    new_token = data["token"]
+    print(f"  message: {data['message']}")
+
+    # 4. 새 토큰으로 admin API 접근 -> 200
+    print("\n=== 4. Access admin API with new token -> 200 ===")
+    headers = {"Authorization": f"Bearer {new_token}"}
+    r = client.get("/admin/dashboard", headers=headers)
     assert r.status_code == 200
     print(f"  200 OK: dashboard accessible")
 
-    # 5. 다른 admin API도 토큰으로 접근 가능
-    print("\n=== Applications with Token ===")
-    r = client.get("/admin/applications?status=pending", headers=headers)
+    # 5. 변경된 비밀번호로 재로그인
+    print("\n=== 5. Re-login with new password ===")
+    r = client.post("/admin/auth/login", json={"username": "admin", "password": "newpass5678"})
     assert r.status_code == 200
-    print(f"  200 OK: applications accessible")
+    data = r.json()
+    print(f"  must_change_password: {data['must_change_password']}")
+    assert data["must_change_password"] is False
 
-    print("\n=== Passes with Token ===")
+    # 6. 재로그인 토큰으로 바로 admin API 접근 가능
+    print("\n=== 6. Direct access after re-login -> 200 ===")
+    headers = {"Authorization": f"Bearer {data['token']}"}
     r = client.get("/admin/passes", headers=headers)
     assert r.status_code == 200
     print(f"  200 OK: passes accessible")
 
-    print("\n[OK] All auth tests passed!")
+    # 7. 이전 임시 비밀번호로 로그인 실패
+    print("\n=== 7. Old password rejected ===")
+    r = client.post("/admin/auth/login", json={"username": "admin", "password": "admin1234"})
+    assert r.status_code == 401
+    print(f"  401 OK: old password blocked")
+
+    print("\n[OK] All password change flow tests passed!")

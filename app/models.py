@@ -198,5 +198,6 @@ class AdminUser(Base):
     username: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     hashed_password: Mapped[str] = mapped_column(String, nullable=False)
     name: Mapped[str] = mapped_column(String, nullable=False)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
 

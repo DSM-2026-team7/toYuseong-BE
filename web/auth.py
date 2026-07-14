@@ -28,10 +28,11 @@ def verify_password(plain: str, hashed: str) -> bool:
 # ── JWT 토큰 ──
 
 
-def create_token(admin_id: int, username: str) -> str:
+def create_token(admin_id: int, username: str, *, must_change_password: bool = False) -> str:
     payload = {
         "sub": str(admin_id),
         "username": username,
+        "must_change_password": must_change_password,
         "exp": datetime.utcnow() + timedelta(hours=TOKEN_EXPIRE_HOURS),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
@@ -50,8 +51,14 @@ def require_admin(
     """Authorization: Bearer <token> 헤더를 검증하고 payload를 반환한다."""
     try:
         payload = decode_token(credentials.credentials)
-        return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="토큰이 만료됐어요")
     except jwt.InvalidTokenError:
         raise HTTPException(status_code=401, detail="유효하지 않은 토큰이에요")
+
+    if payload.get("must_change_password"):
+        raise HTTPException(
+            status_code=403,
+            detail={"error": "password_change_required", "message": "비밀번호를 변경해야 해요"},
+        )
+    return payload
