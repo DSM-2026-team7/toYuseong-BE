@@ -155,4 +155,15 @@ def run_seed(db: Session) -> None:
         )
     )
 
+    # 패스 기간별 가격 (PassPriceTier) - 패스 정보 테이블 동기화를 위한 기본 데이터
+    price_tiers = [
+        models.PassPriceTier(pass_id=1, duration_days=1, price=config.PASS_ONEDAY_PRICE),
+        models.PassPriceTier(pass_id=2, duration_days=30, price=12000),
+        models.PassPriceTier(pass_id=2, duration_days=60, price=22000),
+        models.PassPriceTier(pass_id=2, duration_days=90, price=30000),
+        models.PassPriceTier(pass_id=3, duration_days=30, price=config.PASS_GUNGDONG_LOYALTY_PRICE),
+    ]
+    db.add_all(price_tiers)
+
     db.commit()
+
