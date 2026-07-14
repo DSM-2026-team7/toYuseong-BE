@@ -8,7 +8,8 @@ TOSS_CLIENT_KEY = "test_ck_G2p9LL2p3kv22409oOnr3b7YxAdX"
 
 @router.get("/purchase", response_class=HTMLResponse)
 def get_purchase_demo():
-    html_content = f"""
+    # 중괄호 충돌 방지를 위해 f-string 대신 일반 문자열에 replace 사용
+    html_content = """
     <!DOCTYPE html>
     <html lang="ko">
     <head>
@@ -18,7 +19,7 @@ def get_purchase_demo():
         <script src="https://js.tosspayments.com/v1/payment"></script>
         <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
         <style>
-            body {{
+            body {
                 font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                 background-color: #f3f4f6;
                 margin: 0;
@@ -26,42 +27,42 @@ def get_purchase_demo():
                 display: flex;
                 flex-direction: column;
                 align-items: center;
-            }}
-            .card {{
+            }
+            .card {
                 background: white;
                 padding: 30px;
                 border-radius: 16px;
                 box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
                 max-width: 480px;
                 width: 100%;
-            }}
-            h1 {{
+            }
+            h1 {
                 font-size: 24px;
                 font-weight: 700;
                 color: #111827;
                 margin-top: 0;
                 margin-bottom: 20px;
                 text-align: center;
-            }}
-            .form-group {{
+            }
+            .form-group {
                 margin-bottom: 18px;
-            }}
-            label {{
+            }
+            label {
                 display: block;
                 font-size: 14px;
                 font-weight: 600;
                 color: #374151;
                 margin-bottom: 6px;
-            }}
-            input, select {{
+            }
+            input, select {
                 width: 100%;
                 padding: 10px 12px;
                 border: 1px solid #d1d5db;
                 border-radius: 8px;
                 font-size: 15px;
                 box-sizing: border-box;
-            }}
-            .btn {{
+            }
+            .btn {
                 width: 100%;
                 background-color: #3182f6;
                 color: white;
@@ -73,11 +74,11 @@ def get_purchase_demo():
                 cursor: pointer;
                 transition: background-color 0.2s;
                 margin-top: 10px;
-            }}
-            .btn:hover {{
+            }
+            .btn:hover {
                 background-color: #1b64da;
-            }}
-            .result-box {{
+            }
+            .result-box {
                 margin-top: 20px;
                 padding: 15px;
                 border-radius: 8px;
@@ -88,7 +89,7 @@ def get_purchase_demo():
                 word-break: break-all;
                 display: none;
                 font-size: 13px;
-            }}
+            }
         </style>
     </head>
     <body>
@@ -109,7 +110,7 @@ def get_purchase_demo():
         </div>
 
         <script>
-            const tossPayments = TossPayments("{TOSS_CLIENT_KEY}");
+            const tossPayments = TossPayments("TOSS_CLIENT_KEY_PLACEHOLDER");
             let passes = [];
 
             // 패스 목록 불러오기
@@ -123,7 +124,7 @@ def get_purchase_demo():
                     passes.forEach(p => {
                         const opt = document.createElement('option');
                         opt.value = p.id;
-                        opt.textContent = `${p.name} - ${p.price.toLocaleString()}원 (${p.duration_days}일)`;
+                        opt.textContent = p.name + " - " + p.price.toLocaleString() + "원 (" + p.duration_days + "일)";
                         select.appendChild(opt);
                     });
                 } catch (err) {
@@ -160,25 +161,25 @@ def get_purchase_demo():
         </script>
     </body>
     </html>
-    """
+    """.replace("TOSS_CLIENT_KEY_PLACEHOLDER", TOSS_CLIENT_KEY)
     return html_content
 
 @router.get("/success", response_class=HTMLResponse)
 def get_success_page(type: str, paymentKey: str, orderId: str, amount: int):
     # 토스 인증 완료 후 이곳으로 리다이렉트됨. 백엔드 승인 API를 즉시 호출
-    html_content = f"""
+    html_content = """
     <!DOCTYPE html>
     <html lang="ko">
     <head>
         <meta charset="UTF-8">
         <title>결제 처리 중...</title>
         <style>
-            body {{ font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background-color: #f3f4f6; margin: 0; }}
-            .loader {{ border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }}
-            @keyframes spin {{ 0% {{ transform: rotate(0deg); }} 100% {{ transform: rotate(360deg); }} }}
-            .card {{ background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: center; max-width: 450px; width: 90%; }}
-            pre {{ text-align: left; background: #2d3748; color: #a0aec0; padding: 15px; border-radius: 8px; overflow-x: auto; font-size: 13px; }}
-            .btn {{ display: inline-block; background-color: #3182f6; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 15px; }}
+            body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background-color: #f3f4f6; margin: 0; }
+            .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+            .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: center; max-width: 450px; width: 90%; }
+            pre { text-align: left; background: #2d3748; color: #a0aec0; padding: 15px; border-radius: 8px; overflow-x: auto; font-size: 13px; }
+            .btn { display: inline-block; background-color: #3182f6; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 15px; }
         </style>
     </head>
     <body>
@@ -194,10 +195,10 @@ def get_success_page(type: str, paymentKey: str, orderId: str, amount: int):
 
         <script>
             async function confirmPayment() {
-                const type = "{type}";
-                const paymentKey = "{paymentKey}";
-                const orderId = "{orderId}";
-                const amount = {amount};
+                const type = "TYPE_PLACEHOLDER";
+                const paymentKey = "PAYMENT_KEY_PLACEHOLDER";
+                const orderId = "ORDER_ID_PLACEHOLDER";
+                const amount = AMOUNT_PLACEHOLDER;
 
                 const loader = document.getElementById('loader');
                 const statusTitle = document.getElementById('statusTitle');
@@ -206,7 +207,7 @@ def get_success_page(type: str, paymentKey: str, orderId: str, amount: int):
                 const jsonResult = document.getElementById('jsonResult');
 
                 if (type === 'pass') {
-                    const session = JSON.parse(localStorage.getItem("toss_demo_purchase") || "{{}}");
+                    const session = JSON.parse(localStorage.getItem("toss_demo_purchase") || "{}");
                     if (!session.userId || !session.passId) {
                         statusTitle.textContent = "에러 발생";
                         statusMsg.textContent = "세션 정보가 유실되었습니다.";
@@ -215,7 +216,7 @@ def get_success_page(type: str, paymentKey: str, orderId: str, amount: int):
                     }
 
                     try {
-                        const response = await fetch(`/passes/${{session.passId}}/purchase`, {
+                        const response = await fetch('/passes/' + session.passId + '/purchase', {
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
@@ -238,7 +239,7 @@ def get_success_page(type: str, paymentKey: str, orderId: str, amount: int):
                             jsonResult.textContent = JSON.stringify(result, null, 2);
                         } else {
                             statusTitle.textContent = "❌ 결제 승인 실패";
-                            statusMsg.textContent = result.detail?.message || "알 수 없는 에러";
+                            statusMsg.textContent = (result.detail && result.detail.message) || "알 수 없는 에러";
                             jsonResult.textContent = JSON.stringify(result, null, 2);
                         }
                         resultBox.style.display = 'block';
@@ -255,32 +256,32 @@ def get_success_page(type: str, paymentKey: str, orderId: str, amount: int):
         </script>
     </body>
     </html>
-    """
+    """.replace("TYPE_PLACEHOLDER", type).replace("PAYMENT_KEY_PLACEHOLDER", paymentKey).replace("ORDER_ID_PLACEHOLDER", orderId).replace("AMOUNT_PLACEHOLDER", str(amount))
     return html_content
 
 @router.get("/fail", response_class=HTMLResponse)
 def get_fail_page(code: str, message: str, orderId: str):
-    html_content = f"""
+    html_content = """
     <!DOCTYPE html>
     <html lang="ko">
     <head>
         <meta charset="UTF-8">
         <title>결제 실패</title>
         <style>
-            body {{ font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background-color: #f3f4f6; margin: 0; }}
-            .card {{ background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: center; max-width: 450px; width: 90%; }}
-            .btn {{ display: inline-block; background-color: #e53e3e; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 15px; }}
+            body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; background-color: #f3f4f6; margin: 0; }
+            .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); text-align: center; max-width: 450px; width: 90%; }
+            .btn { display: inline-block; background-color: #e53e3e; color: white; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 15px; }
         </style>
     </head>
     <body>
         <div class="card">
             <h2 style="color: #e53e3e;">❌ 결제가 거절되거나 취소되었습니다</h2>
-            <p>코드: {code}</p>
-            <p>메시지: {message}</p>
-            <p>주문번호: {orderId}</p>
+            <p>코드: CODE_PLACEHOLDER</p>
+            <p>메시지: MESSAGE_PLACEHOLDER</p>
+            <p>주문번호: ORDER_ID_PLACEHOLDER</p>
             <a href="/demo/purchase" class="btn">🎫 데모 페이지로 이동</a>
         </div>
     </body>
     </html>
-    """
+    """.replace("CODE_PLACEHOLDER", code).replace("MESSAGE_PLACEHOLDER", message).replace("ORDER_ID_PLACEHOLDER", orderId)
     return html_content
