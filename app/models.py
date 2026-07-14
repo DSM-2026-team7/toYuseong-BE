@@ -1,3 +1,4 @@
+import uuid
 from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
@@ -82,13 +83,23 @@ class Menu(Base):
 
 
 class PaymentQr(Base):
+    """가게가 만들어 화면에 띄우는 1회용 QR. type으로 스탬프용/결제용을 구분한다.
+
+    token은 QR에 실제로 인코딩되는 추측 불가 문자열(uuid4 hex)이고, id는 내부 PK다.
+    손님 스캔(POST /scan)은 이 token으로 조회하고, 소진되면 status를 CONSUMED로 바꾼다.
+    """
+
     __tablename__ = "payment_qrs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), nullable=False)
-    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    token: Mapped[str] = mapped_column(String, unique=True, nullable=False, default=lambda: uuid.uuid4().hex)
+    type: Mapped[str] = mapped_column(String, nullable=False, default="payment")
+    amount: Mapped[int | None] = mapped_column(Integer, nullable=True)
     status: Mapped[str] = mapped_column(String, nullable=False, default="WAITING")
     qr_image: Mapped[str] = mapped_column(String, nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    consumed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
 
 class Payment(Base):

@@ -61,6 +61,12 @@ class StampRequest(BaseModel):
     amount: Optional[int] = None
 
 
+class ScanRequest(BaseModel):
+    """새 QR 플로우: 가게가 띄운 QR을 손님이 스캔해서 제출할 때 쓰는 요청 바디."""
+
+    qr_token: str
+
+
 class RewardCoupon(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -380,9 +386,15 @@ class DirectQrRequest(BaseModel):
     amount: int
 
 
+class StampQrRequest(BaseModel):
+    amount: Optional[int] = None
+
+
 class QrCreateResponse(BaseModel):
     qrId: int
-    amount: int
+    token: str
+    type: str
+    amount: Optional[int] = None
     qrImage: str
 
 

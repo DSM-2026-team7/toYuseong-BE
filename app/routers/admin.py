@@ -151,13 +151,14 @@ def delete_menu(menu_id: int, owner_id: int = Depends(require_owner_id), db: Ses
 
 
 def qr_out(qr: models.PaymentQr, status_field=False):
-    data = {"qrId": qr.id, "amount": qr.amount, "qrImage": qr.qr_image}
+    data = {"qrId": qr.id, "token": qr.token, "type": qr.type, "amount": qr.amount, "qrImage": qr.qr_image}
     return data | ({"status": qr.status} if status_field else {})
 
 
-def create_qr(db: Session, store_id: int, amount: int):
-    if amount <= 0: error(400, "invalid_request", "결제 금액은 0보다 커야 합니다.")
-    qr = models.PaymentQr(store_id=store_id, amount=amount, qr_image="")
+def create_qr(db: Session, store_id: int, amount: int | None, qr_type: str = "payment"):
+    if qr_type == "payment" and (amount is None or amount <= 0):
+        error(400, "invalid_request", "결제 금액은 0보다 커야 합니다.")
+    qr = models.PaymentQr(store_id=store_id, type=qr_type, amount=amount, qr_image="")
     db.add(qr); db.flush(); qr.qr_image = f"/admin/qrs/{qr.id}/image"; db.commit(); db.refresh(qr)
     return qr
 
@@ -173,6 +174,13 @@ def menu_qr(body: schemas.MenuQrRequest, owner_id: int = Depends(require_owner_i
 @router.post("/qrs/direct", status_code=201, response_model=schemas.QrCreateResponse)
 def direct_qr(body: schemas.DirectQrRequest, owner_id: int = Depends(require_owner_id), db: Session = Depends(get_db)):
     store = owner_store(db, owner_id); return qr_out(create_qr(db, store.id, body.amount))
+
+
+@router.post("/qrs/stamp", status_code=201, response_model=schemas.QrCreateResponse)
+def stamp_qr(body: schemas.StampQrRequest, owner_id: int = Depends(require_owner_id), db: Session = Depends(get_db)):
+    """스탬프 적립용 QR 생성. 손님이 이 QR을 스캔하면 POST /scan이 스탬프를 적립시킨다."""
+    store = owner_store(db, owner_id)
+    return qr_out(create_qr(db, store.id, body.amount, qr_type="stamp"))
 
 
 def owned_qr(db: Session, qr_id: int, store_id: int):
