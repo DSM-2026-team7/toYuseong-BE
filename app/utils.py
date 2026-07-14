@@ -49,6 +49,35 @@ def require_user_id(
     return x_user_id
 
 
+def require_owner_id(
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    x_user_id: Optional[int] = Header(default=None, alias="X-User-Id"),
+    db: Session = Depends(get_db),
+) -> int:
+    """관리자 데모 인증.
+
+    실제 JWT 발급 서버가 없는 현재 프로젝트에서는 Bearer 토큰으로 owner의 id
+    (`Bearer 1` 또는 `Bearer owner-1`)를 받는다. 기존 데모 클라이언트를 위해
+    X-User-Id도 허용한다.
+    """
+    owner_id = x_user_id
+    if authorization:
+        scheme, _, token = authorization.partition(" ")
+        if scheme.lower() != "bearer" or not token:
+            owner_id = None
+        else:
+            raw_id = token.removeprefix("owner-")
+            owner_id = int(raw_id) if raw_id.isdigit() else None
+    if owner_id is None:
+        raise HTTPException(401, detail={"error": "unauthorized", "message": "로그인이 필요합니다."})
+
+    from app import models
+    user = db.get(models.User, owner_id)
+    if user is None or user.role != "owner":
+        raise HTTPException(401, detail={"error": "unauthorized", "message": "로그인이 필요합니다."})
+    return owner_id
+
+
 def sync_user_coupon_status(db, user_coupon, coupon) -> None:
     """active 상태인 UserCoupon이 기간을 넘겼으면 expired로 전환한다 (조회 시점 지연 평가)."""
     if user_coupon.status != "active":
