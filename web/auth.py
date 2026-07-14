@@ -13,6 +13,17 @@ TOKEN_EXPIRE_HOURS = 24
 
 security = HTTPBearer()
 
+# 로그아웃된 토큰 블랙리스트 (in-memory)
+_blacklisted_tokens: set[str] = set()
+
+
+def blacklist_token(token: str) -> None:
+    _blacklisted_tokens.add(token)
+
+
+def is_blacklisted(token: str) -> bool:
+    return token in _blacklisted_tokens
+
 
 # ── 비밀번호 ──
 
@@ -49,8 +60,13 @@ def require_admin(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict:
     """Authorization: Bearer <token> 헤더를 검증하고 payload를 반환한다."""
+    token = credentials.credentials
+
+    if is_blacklisted(token):
+        raise HTTPException(status_code=401, detail="로그아웃된 토큰이에요")
+
     try:
-        payload = decode_token(credentials.credentials)
+        payload = decode_token(token)
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="토큰이 만료됐어요")
     except jwt.InvalidTokenError:

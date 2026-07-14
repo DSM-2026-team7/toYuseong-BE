@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app import models
 from app.database import get_db
 from web.auth import (
+    blacklist_token,
     create_token,
     decode_token,
     hash_password,
@@ -102,3 +103,12 @@ def change_password(
     # 새 토큰 발급 (must_change_password=False)
     new_token = create_token(admin.id, admin.username, must_change_password=False)
     return ChangePasswordResponse(token=new_token, message="비밀번호가 변경됐어요")
+
+
+@router.post("/logout")
+def logout(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    """로그아웃: 현재 토큰을 무효화한다."""
+    blacklist_token(credentials.credentials)
+    return {"message": "로그아웃됐어요"}
