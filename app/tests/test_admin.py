@@ -27,6 +27,11 @@ def test_admin_menu_and_qr_flow(client):
     qr_id = qr.json()["qrId"]
     assert client.get(f"/admin/qrs/{qr_id}", headers=AUTH).json()["status"] == "WAITING"
 
+    image = client.get(f"/admin/qrs/{qr_id}/image")
+    assert image.status_code == 200
+    assert image.headers["content-type"].startswith("image/svg+xml")
+    assert image.content.startswith(b"<?xml") or b"<svg" in image.content[:500]
+
 
 def test_admin_coupon_flow(client):
     created = client.post("/admin/coupons", headers=AUTH, json={

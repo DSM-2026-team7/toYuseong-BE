@@ -1,7 +1,9 @@
 import re
+from io import BytesIO
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
@@ -559,6 +561,33 @@ def owned_qr(db: Session, qr_id: int, store_id: int):
 @router.get("/qrs/{qr_id}", response_model=schemas.QrResponse)
 def get_qr(qr_id: int, owner_id: int = Depends(require_owner_id), db: Session = Depends(get_db)):
     return qr_out(owned_qr(db, qr_id, owner_store(db, owner_id).id), True)
+
+
+@router.get("/qrs/{qr_id}/image", response_class=StreamingResponse)
+def get_qr_image(qr_id: int, db: Session = Depends(get_db)):
+    """QR 토큰을 실제로 스캔할 수 있는 SVG 이미지를 반환한다.
+
+    이 엔드포인트는 점주 화면의 <img>가 Bearer 헤더 없이도 이미지를
+    불러올 수 있도록 공개한다. QR 자체가 결제/적립 플로우의 공개 진입점이며,
+    실제 사용 시에는 토큰 상태·만료·사용자 인증을 /scan과 /checkout에서 검증한다.
+    """
+    qr = db.get(models.PaymentQr, qr_id)
+    if qr is None:
+        error(404, "qr_not_found", "QR을 찾을 수 없습니다.")
+
+    # SVG 생성은 Pillow가 필요 없는 qrcode의 SVG factory를 사용한다.
+    import qrcode
+    from qrcode.image.svg import SvgPathImage
+
+    image = qrcode.make(qr.token, image_factory=SvgPathImage, box_size=10, border=4)
+    output = BytesIO()
+    image.save(output)
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "no-store"},
+    )
 
 
 @router.get("/qrs/{qr_id}/result", response_model=schemas.PaymentQrResultResponse)

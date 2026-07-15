@@ -4,3 +4,4 @@ pyjwt
 pytest
 httpx
 google-auth
+qrcode
